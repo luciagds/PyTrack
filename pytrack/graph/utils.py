@@ -29,12 +29,12 @@ def get_unique_number(lon, lat):
     lat_int = int((lat_double * 10 ** abs(Decimal(str(lat_double)).as_tuple().exponent)))
     lon_int = int((lon_double * 10 ** abs(Decimal(str(lon_double)).as_tuple().exponent)))
 
-    val = abs((lat_int << 16 & 0xffff0000) | (lon_int & 0x0000ffff))
-    val = val % 2147483647
+    #val = abs((lat_int << 16 & 0xffff0000) | (lon_int & 0x0000ffff))
+    #val = val % 2147483647
 
     # alternative use hash or other
-    # return int(str(lat_int)+str(lon_int))
-    return val
+    return int(str(lat_int)+str(lon_int))
+    #return val
 
 
 def graph_to_gdfs(G, nodes=True, edges=True, node_geometry=True, edge_geometry=True):
