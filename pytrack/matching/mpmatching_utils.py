@@ -1,6 +1,8 @@
 import itertools
 import math
 
+import geopandas as gpd
+
 import networkx as nx
 from shapely.geometry import LineString
 
@@ -194,3 +196,69 @@ def get_predecessor(target, predecessor):
         target = pred
         pred = predecessor[target]
     return pred_elab
+
+
+def create_linestring_path(G, trellis, predecessor):
+    """ Create the linestring geometry that best matches the actual GPS points. Route created based on results obtained from ``pmatching_utils.viterbi_search`` and ``mpmatching_utils.create_trellis`` methods.
+
+    Parameters
+    ----------
+    G: networkx.MultiDiGraph
+        Street network graph used to create trellis graph.
+    trellis: networkx.DiGraph
+        A directed acyclic Trellis graph.
+    predecessor: dict
+        Predecessor for each node.
+
+    Returns
+    -------
+    geom: geometry
+        Geometry of the path.
+    """
+    path_elab, edges = create_matched_path(G_interp, trellis, predecessor)
+    #return gpd.GeoDataFrame(geometry=[LineString([(lon, lat) for lat, lon in edges])], crs="EPSG:4326")
+    return LineString([(lon, lat) for lat, lon in edges])
+
+
+def get_projected_coordinates(df, G, G_interp, trellis, predecessor):
+    """ Project the trace coordinates onto the matched (raw) road network.
+
+    Parameters
+    ----------
+    df: gpd.GeoDataFrame
+        The geometries of the coordinates to match.
+    G: networkx.MultiDiGraph
+        Street network graph (raw).
+    G_interp: networkx.MultiDiGraph
+        Street network graph used to create trellis graph (interpolated).
+    trellis: networkx.DiGraph
+        A directed acyclic Trellis graph.
+    predecessor: dict
+        Predecessor for each node.
+
+    Returns
+    -------
+    matches: gpd.GeoDataFrame
+        The projected coordinates with their associated segment in the (raw) road network.
+    """
+    # Get road segments from original road network
+    target_ids = []
+    for k, v in predecessor.items():
+        target_ids.append(trellis._node[v]['candidate'].edge_osmid)
+    #TODO: verify if `osmid` is different for directed graphs were nodes are the same and direction is opposite
+    filtered_edges = [(data['osmid'], u, v, data['geometry']) for u, v, k, data in G.edges(keys=True, data=True) if data['osmid'] in target_ids]
+    filtered_edges = gpd.GeoDataFrame(filtered_edges, columns = ['geoid', 'start_node', 'end_node', 'geom'], geometry='geom', crs="EPSG:4326").drop_duplicates()
+
+    # Find nearest segment for each coordinate and project
+    geometry = [Point(longitude, latitude) for i, (index, longitude, latitude, datetime, properties) in df.iterrows()]
+    matches = gpd.GeoDataFrame(df.drop(columns=['latitude','longitude']), geometry=geometry, crs="EPSG:4326")  # WGS 84
+    matches = gpd.sjoin_nearest(matches.to_crs('epsg:3857'), filtered_edges.to_crs('epsg:3857'), how="left", distance_col='distance_to_road').to_crs("EPSG:4326")
+    matches = pd.merge(matches.rename(columns={'geometry':'geom'}), filtered_edges.reset_index()[['index','geom']].rename(columns={'index':'index_right','geom':'geom_road'}), on="index_right")
+    matches['geom_proj'] = matches.apply(lambda x : x['geom_road'].interpolate(x['geom_road'].project(x['geom'])), axis=1)
+
+    return gpd.GeoDataFrame(matches.drop(columns=['index_right']), geometry='geom_road')
+
+
+
+
+    
